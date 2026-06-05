@@ -21,6 +21,7 @@ library(knitr) #formatting
 library(gridExtra) #display plots in grid layout
 library(patchwork) #combine multiple ggplot
 library(zoo) #imputation and interpolation
+library(slider) # Used to help calculate rolling averages
 ```
 
 **The ILINet and Clinical Labs datasets were downloaded from the CDC FluView surveillance system, which provides weekly influenza monitoring data across the United States. The ILINet dataset contains information about influenza-like illness (ILI) activity reported by healthcare providers, including the percentage of flu-like patient visits, total ILI cases, number of providers, and total patient visits.**
@@ -33,22 +34,29 @@ library(zoo) #imputation and interpolation
 # CDC datasets contain an extra descriptive row,
 # therefore we use skip = 1  during import.
 #Reading all columns as character strings to prevent formatting issues
+
 # Import ILINet dataset
 ilinet <- read_csv(
-  "C:/Users/shesh/OneDrive/Desktop/503PROJECT/FluViewPhase2Data/ILINet.csv",skip = 1,
-  col_types = cols(.default = col_character()))
+  "C:/Users/celin/OneDrive/Education/USD-MS-ADS/ADS-503-Applied-Predictive-Analytics/Final-Project/ILINet.csv",
+  skip = 1,
+  col_types = cols(.default = col_character())
+)
 
 # Import ICl Clinical labs dataset
 clinical_labs <- read_csv(
-  "C:/Users/shesh/OneDrive/Desktop/503PROJECT/FluViewPhase2Data/ICL_NREVSS_Clinical_Labs.csv",
-  skip = 1,col_types = cols(.default = col_character()))
+  "C:/Users/celin/OneDrive/Education/USD-MS-ADS/ADS-503-Applied-Predictive-Analytics/Final-Project/ICL_NREVSS_Clinical_Labs.csv",
+  skip = 1,
+  col_types = cols(.default = col_character())
+)
 
 ```
 
 ### VERIFY IMPORTS
+
 ```{r}
 #view few rows and columns of ilinet dataset
 head(ilinet[,1:7]) |> knitr::kable()
+
 #view few rows for clinical lab dataset
 head(clinical_labs) |>knitr::kable()
 
@@ -56,7 +64,8 @@ head(clinical_labs) |>knitr::kable()
 cat("Dimensions for ilinet dataset is ", dim(ilinet))
 cat("\n Dimensions for clinical labs dataset is",dim(clinical_labs))
 ```
-Output show 30152 rows, 15 columns for ilinet and 30152 rows and 10 columns and 29808 rows for clinical _labs.
+
+Output show 30152 rows, 15 columns for ilinet and 30152 rows and 10 columns and 29808 rows for clinical \_labs.
 
 ### VIEW DATATYPES
 
@@ -65,8 +74,8 @@ Output show 30152 rows, 15 columns for ilinet and 30152 rows and 10 columns and 
 str(ilinet) 
 str(clinical_labs) 
 ```
-From above output we can see all variables are currently stored as character strings which will require numeric conversion for analysis. 
-In CDC influenza datasets, "X" usually means the value was suppressed, missing, or not reported.
+
+From above output we can see all variables are currently stored as character strings which will require numeric conversion for analysis. In CDC influenza datasets, "X" usually means the value was suppressed, missing, or not reported.
 
 ### CLEAN COLUMN NAMES
 
@@ -75,29 +84,37 @@ Original column names contain capital letters,spaces,special characters,and peri
 ```{r}
 # View column names for ilinet
 colnames(ilinet) |>knitr::kable()
+
 #View column names fr Clinical lab dataset
 colnames(clinical_labs) |>knitr::kable()
 
 #To improve code readability and prevents errors we standardize column names to a consistent format
 #Convert column names into standardized format
 ilinet <- clean_names(ilinet)
+
 #Verify cleaned column names
 colnames(ilinet) |>knitr::kable()
+
 #similarly for cilinal labs dataset
 clinical_labs <- clean_names(clinical_labs)
+
 #Verify cleaned column names
 colnames(clinical_labs) |>knitr::kable()
 
 ```
+
 ### VIEW DUPLICATES
+
 ```{r}
 #calculate duplicate for ilinet
 duplicate_ili <- sum(duplicated(ilinet))
 duplicate_ili
+
 #calculate duplicate for clinical labs
 duplicate_clinical <- sum(duplicated(clinical_labs))
 duplicate_clinical
 ```
+
 No duplicate records exist in either datasets.
 
 ### HANDLE SUPPRESSED VALUES X
@@ -115,6 +132,7 @@ missing_ilinet |>knitr::kable()
 missing_clinical <- colSums(is.na(clinical_labs))
 missing_clinical |>knitr::kable()
 ```
+
 - The missing value analysis shows that percent_weighted_ili contains 30,141 missing values, meaning almost all records in this variable are unavailable and the column may not be reliable for analysis.
 - All age-specific variables (age_0_4, age_25_49, age_25_64, age_5_24, age_50_64, and age_65) contain 100% missing values making these variables completely unusable.
 - The Clinical Labs dataset contains 6,205 missing values.
@@ -127,6 +145,7 @@ We can calculate and visualise the missing value using ggplot for both datasets.
 ```{r}
 # This converts the missing value counts into a dataframe
 missing_df_ili <- data.frame(variable = names(missing_ilinet),missing_count = missing_ilinet)
+
 ## The bar chart helps identify missingness in the ILINet.
 p1 <- ggplot(
   missing_df_ili,
@@ -139,7 +158,7 @@ missing_df_clinical <- data.frame( variable= names(missing_clinical),missing_cou
 #visualise using barplot
 p2 <- ggplot(missing_df_clinical,
   aes(x = reorder(variable, missing_count),y = missing_count)) +
-  geom_bar(stat = "identity",fill = "darkgreen") +coord_flip() +
+  geom_bar(stat = "identity",fill = "darkgreen") +coor d_flip() +
   labs(title = "Missing Values in Clinical Labs",x = "Variables",y = "Missing Count") 
 
 #visualize both plots
@@ -148,12 +167,12 @@ p1 + p2
 
 ### DROP COMPLETELY MISSING COLUMNS
 
-
 ```{r}
 #Columns with entirely missing values are removed
 # Age columns and weighted_ili have 100% missing values so we drop them 
 ilinet <- ilinet %>% 
   select(-starts_with("age_"), -percent_weighted_ili , -region_type) 
+
 #similarly drop for clinical labs dataset
 clinical_labs <- clinical_labs %>% select(-region_type )
 
@@ -161,8 +180,8 @@ clinical_labs <- clinical_labs %>% select(-region_type )
 colnames(ilinet) |> knitr::kable()
 colnames(clinical_labs) |> knitr::kable()
 ```
-After dropping  columns, the ILINet dataset is reduced from 15 to 7 meaningful variables.
 
+After dropping columns, the ILINet dataset is reduced from 15 to 7 meaningful variables.
 
 ### CONVERT VARIABLES TO NUMERIC
 
@@ -198,7 +217,6 @@ sapply(clinical_labs, class) |>knitr::kable()
 
 After conversion, approximately 7 variables in ILINet and 8 in clinical labs become numeric.
 
-
 ### **NUMERIC VARIABLE DISTRIBUTIONS**
 
 #### **ILINET DATASET**
@@ -217,15 +235,13 @@ numeric_ilinet_long <- numeric_ilinet %>%
 
 #Create histogram distributions for all numeric variables
 ggplot(numeric_ilinet_long,aes(x = Value)) +
-  
   geom_histogram(bins = 30,fill ="steelblue",color= "white",alpha = 0.9) +
-  
   facet_wrap(~ Variable,scales = "free",ncol = 2) +   #creates separate plots for each variable
-  
   labs(title = "Distribution of Numeric Variables for ILINet",
     x = "Value",y = "Count") + theme_minimal()
   
 ```
+
 - Most numeric variables are right-skewed.Variables such as ilitotal, total_patients, total_specimens, total_a, and total_b show strong positive skewness.
 - percent_unweighted_ili is also positively skewed, indicating that high influenza activity occurs less frequently.
 - This pattern is expected because most regions experience normal flu activity, while only a few weeks show major outbreak spikes.
@@ -255,11 +271,11 @@ ggplot(numeric_clinical_long,aes(x = Value)) +
     x = "Value",y = "Count") + theme_minimal()
   
 ```
+
 - The Clinical Labs numeric variables are highly right-skewed.Variables such as total_specimens, total_a, and total_b show many low laboratory counts with a small number of very large testing volumes.
 - percent_positive, percent_a, and percent_b are also positively skewed, indicating that high influenza positivity rates occur less frequently.
 
-
-### OUTLIER DETECTION 
+### OUTLIER DETECTION
 
 ```{r}
 
@@ -312,8 +328,8 @@ knitr::kable(clinical_outliers, digits = 2, row.names = FALSE)
 
 ### VISUALIZE OUTLIERS DISTRIBUTION
 
- Visualize the outlier distribution for both datasets
- 
+Visualize the outlier distribution for both datasets
+
 ```{r, warning=FALSE}
 # Visualize outliers for ilinet datset
 ggplot(numeric_ilinet_long,
@@ -354,7 +370,6 @@ summary(numeric_clinical) |>knitr::kable()
 - percent_positive has a maximum value of 66.67%, showing that some regions experienced extremely high influenza positivity rates during peak seasons.
 - The variables week and year are evenly distributed because the data spans multiple influenza seasons and calendar weeks.
 - Both datasets contain missing values, particularly in laboratory-related variables,so imputation has to be done before predictive modeling.
-
 
 ### IMPUTATION OF MISSING VALUES
 
@@ -420,11 +435,11 @@ clinical_labs_clean <- clinical_labs %>% group_by(region) %>%
 colSums(is.na(clinical_labs_clean)) |> kable()
 
 ```
- 
- - After interpolation and median imputation, a small number of missing values still remained in both datasets.
+
+- After interpolation and median imputation, a small number of missing values still remained in both datasets.
 - In the ILINet dataset, 344 missing values remained in percent_unweighted_ili, ilitotal, num_of_providers, and total_patients.
 - In the Clinical Labs dataset, 2,208 missing values still remained in total_specimens, total_a, total_b, and percent_positive, while percent_a and percent_b contained 6,205 missing values.
-- Variables percent_a and percent_b were considered redundant because they are derived from existing laboratory variables 
+- Variables percent_a and percent_b were considered redundant because they are derived from existing laboratory variables
 - The remaining missing records in clinical laboratory variables will be removed to ensure cleaner and more reliable regression modelling.
 
 ```{r}
@@ -447,6 +462,7 @@ clinical_labs_clean <- clinical_labs_clean %>%
 colSums(is.na(clinical_labs_clean)) |> knitr::kable()
 
 ```
+
 Output shows the datasets are clean with no missing values.
 
 ### MERGING DATASETS
@@ -470,11 +486,263 @@ str(flu_data)
 dim(flu_data)
 cat("Merged Dataset Records:", nrow(flu_data), "\n")
 ```
+
 - The final merged influenza dataset contains 27,600 records and 11 variables, showing that matching observations were successfully combined from both ILINet and Clinical Labs datasets.
 
+\`\`\`
 
+```{r}
+# Exporting the merged dataset as a csv file
+write.csv(
+  flu_data,
+  file = "/Users/yubiquinzon/Documents/USD MS-ADS /503/Project/flu_data.csv",
+  row.names = FALSE
+)
+
+# Variable to count the # of original rows before feature engineering
+original_rows <- nrow(flu_data)
+```
+
+### FEATURE ENGINEERING
+
+Feature engineering was performed to create additional predictors that may help the model better capture patterns in influenza activity. This process included creating future target variables, capturing previous week metrics, rolling averages, changes from week to week, and calculating percentages. Ultimately, the goal of these engineered features are to help improve the model's ability to predict future influenza percent positivity
+
+```{r}
+### Creating a new dataset that will contain the engineered features
+flu_features <- flu_data %>%
+  arrange(region, year, week) %>% # Sorting accordingly to perform rolling calculations
+  group_by(region) %>% # Grouping by region to calculate separately per region
+  
+  mutate(
+    
+    ### 5 columns to predict on
+    # Creating 4 other target variables by pulling the leading week's percent positive
+    target_1wk = lead(percent_positive, 1),
+    target_2wk = lead(percent_positive, 2),
+    target_3wk = lead(percent_positive, 3),
+    target_4wk = lead(percent_positive, 4),
+
+    ### Previous Week's values using the lag function
+    lag1_percent_positive = lag(percent_positive, 1), 
+    lag1_total_specimens = lag(total_specimens, 1),
+    lag1_total_a = lag(total_a, 1),
+    lag1_total_b = lag(total_b, 1),
+    lag1_ili = lag(percent_unweighted_ili, 1),
+
+    ### Calculating 4 week rolling average - structure is as followed:
+    # 1. This means to start at last week's metric
+    # 2. Takes the rolling mean(average)
+    # 3. This then looks at 3 weeks passed the last (4 total)
+    # 4. Return N/A if there is not a 4 week history
+    
+    # rolling average for total speciman
+    roll4_total_specimens = slide_dbl(
+      lag(total_specimens), 
+      mean, 
+      .before = 3,
+      .complete = TRUE 
+    ),
+
+    # rolling average for total a
+    roll4_total_a = slide_dbl(
+      lag(total_a),
+      mean,
+      .before = 3,
+      .complete = TRUE
+    ),
+
+    # rolling average for total b
+    roll4_total_b = slide_dbl(
+      lag(total_b),
+      mean,
+      .before = 3,
+      .complete = TRUE
+    ),
+
+    # rolling average for percent unweighted ili
+    roll4_ili = slide_dbl(
+      lag(percent_unweighted_ili),
+      mean,
+      .before = 3,
+      .complete = TRUE
+    ),
+
+    # rolling average for percent positive
+    roll4_percent_positive = slide_dbl(
+      lag(percent_positive),
+      mean,
+      .before = 3,
+      .complete = TRUE
+    ),
+
+    ### Metric Differences
+    specimens_change = total_specimens - lag(total_specimens, 1),
+    total_a_change = total_a - lag(total_a, 1),
+    total_b_change = total_b - lag(total_b, 1),
+    ili_change = percent_unweighted_ili - lag(percent_unweighted_ili, 1),
+    positive_change = percent_positive - lag(percent_positive, 1),
+
+    ### Percentages
+    a_ratio = total_a / total_specimens,
+    b_ratio = total_b / total_specimens,
+    ili_patient_ratio = ilitotal / total_patients,
+
+    ### Week Featuring 
+    # As weeks are cylical vs linear, need to show week 52, is closer to 1 than it is to 45
+    week_sin = sin(2 * pi * week / 52),
+    week_cos = cos(2 * pi * week / 52)
+  ) %>%
+  
+  # Removes region grouping
+  ungroup()
+```
+
+### DATA CLEANING (POST FEATURE ENGINEERING)
+
+After feature engineering, the dataset was evaluated for missing values introduced by the lag features, rolling averages, future target variables, and ratio-based metrics. Missing values associated with the ratio features were further investigated and found to result from observations with zero denominators, producing undefined ratio calculations. Because these observations represented weeks with no recorded specimens or patients, the affected ratio values were imputed with 0. The remaining missing values occurred naturally because observations at the beginning and end of each regional time series did not have sufficient historical or future data to calculate all engineered features. Records containing these remaining missing values were removed to create a complete dataset for predictive modeling. The number and percentage of removed observations were then calculated to assess the impact of the feature engineering process on the final dataset.
+
+```{r}
+# Check missing values after feature engineering
+tibble(
+  Variable = names(flu_features),
+  Missing_Values = colSums(is.na(flu_features))
+) %>%
+  filter(Missing_Values > 0) %>%
+  arrange(desc(Missing_Values))
 
 ```
 
+Looking at the table above, many of the missing values can be justified from the fact that they come from the engineered rolling averages and future target columns! Any week that dont have the historic or future data will return as null. The fact that they come in multiples of 50 also supports this fact. However, what stood out was the missing values for our ratio columns. We need to explore deeper on why these are showing as null
 
+```{r}
+# Count # of records with 0 total speiciman
+flu_features %>%
+  filter(total_specimens == 0)
+```
 
+The table above explains the reason for the missing values in the engineered a_ratio and b_ratio variables. In all 552 cases, the denominator of the ratio calculation is equal to zero, resulting in a null value. Because these missing values are caused by division by zero rather than missing data, they were imputed with 0 to avoid unnecessarily removing observations from the dataset
+
+```{r}
+flu_features %>%
+  filter(is.na(ili_patient_ratio)) %>%
+  select(region, year, week, ilitotal, total_patients, ili_patient_ratio)
+```
+
+The table above explains the reason for the null values in the engineered ili_patient_ratio variable. Similar to the previous ratio features, the denominator of the calculation is equal to zero, resulting in a null value. This was true for all 9 missing observations. Because these null values were caused by division by zero rather than missing data, they were imputed with 0 to avoid unnecessarily removing observations from the dataset
+
+```{r}
+# Imputing engineered ratio columns with 0
+flu_features <- flu_features %>%
+  mutate(
+    a_ratio = replace_na(a_ratio, 0),
+    b_ratio = replace_na(b_ratio, 0),
+    ili_patient_ratio = replace_na(ili_patient_ratio, 0)
+  )
+
+# Check missing values after imputation
+tibble(
+  Variable = names(flu_features),
+  Missing_Values = colSums(is.na(flu_features))
+) %>%
+  filter(Missing_Values > 0) %>%
+  arrange(desc(Missing_Values))
+```
+
+```{r}
+# Remove rows with missing values
+flu_model_data <- flu_features %>%
+  drop_na()
+
+# Count removed rows
+final_rows <- nrow(flu_model_data)
+rows_removed <- original_rows - final_rows
+
+# Displaying amount of rows removed from feature engineering
+cat("Original rows:", original_rows, "\n")
+cat("Rows after feature engineering cleanup:", final_rows, "\n")
+cat("Rows removed:", rows_removed, "\n")
+cat("Percent removed:", round(rows_removed / original_rows * 100, 2), "%\n")
+```
+
+### EXPLORING ENGINEERED DATASET
+
+```{r}
+# Viewing our engineered dataset
+str(flu_model_data)
+```
+
+### ENGINEERED FEATURE DISTRIBUTIONS
+
+```{r}
+# Future target variables
+future_targets <- flu_model_data %>%
+  select(starts_with("target"))
+
+#Convet all numeric columns into one common structure(long format) so ggplot create multiple panels
+future_targets_long <- future_targets %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+#Create histogram distributions for all numeric variables
+ggplot(future_targets_long, aes(x = Value)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.9) +
+  facet_wrap(~ Variable, scales = "free", ncol = 2) +
+  labs(title = "Future Target Variables",
+       x = "Value", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+# Lagged variables
+lagged_vars <- flu_model_data %>%
+  select(starts_with("lag"))
+
+# Convert all numeric columns into one common structure (long format) so ggplot can create multiple panels
+lagged_vars_long <- lagged_vars %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+# Create histogram distributions for all lagged variables
+ggplot(lagged_vars_long, aes(x = Value)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.9) +
+  facet_wrap(~ Variable, scales = "free", ncol = 3) +
+  labs(title = "Lagged Variables",
+       x = "Value", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+# Rolling average variables
+rolling_vars <- flu_model_data %>%
+  select(starts_with("roll"))
+
+# Convert all numeric columns into one common structure (long format) so ggplot can create multiple panels
+rolling_vars_long <- rolling_vars %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+# Create histogram distributions for all rolling average variables
+ggplot(rolling_vars_long, aes(x = Value)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.9) +
+  facet_wrap(~ Variable, scales = "free", ncol = 3) +
+  labs(title = "Rolling Average Variables",
+       x = "Value", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+# Ratio variables
+ratio_vars <- flu_model_data %>%
+  select(contains("ratio"))
+
+# Convert all numeric columns into one common structure (long format) so ggplot can create multiple panels
+ratio_vars_long <- ratio_vars %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+# Create histogram distributions for all ratio variables
+ggplot(ratio_vars_long, aes(x = Value)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white", alpha = 0.9) +
+  facet_wrap(~ Variable, scales = "free", ncol = 1) +
+  labs(title = "Ratio Variables",
+       x = "Value", y = "Count") +
+  theme_minimal()
+```
+
+As we can see, many of the engineered variables remain highly right-skewed. This may pose challenges for certain modeling techniques that are sensitive to predictor distributions. However, several engineered variables, contain negative values, making a Box-Cox transformation unsuitable since it requires strictly positive data. 
