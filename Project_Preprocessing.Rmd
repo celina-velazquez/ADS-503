@@ -1004,13 +1004,21 @@ ggplot(flu_model_data,
 - Several weeks show large variations and extreme values, meaning that influenza outbreaks can vary in severity from year to year.
 - The results confirm that influenza activity follows a strong seasonal pattern.
 
+## **Modeling**
+
+### Feature Selection
+
 ```{r}
 # Predictors to remove: total_a, total_b, percent_positive,percent_unweighted_ili, ilitotal, total_a, total_b
 cols_to_remove <- c("total_a", "total_b", "percent_positive", "percent_unweighted_ili", "ilitotal")
 flu_model_data1 <- flu_model_data %>% dplyr::select(-any_of(cols_to_remove))
 #str(flu_model_data1)
 ```
+
 The original predictors from which features were engineered were removed given their high correlation with the engineered features. The decision to include or exclude additional variables will be determined based on variable importance after training a baseline model.
+
+### Data Splitting and Resampling Strategies
+
 ```{r}
 # Create training and test set data by using the oldest 80% of state-week observations as the training set and the most recent 20% of this data as the test set.
 flu_model_data1 <- flu_model_data1 %>%
@@ -1040,8 +1048,10 @@ indx <- createFolds(y_train, k=5, returnTrain = TRUE)
 ctrl <- trainControl(method = "cv", index = indx)
 head(train_data)
 ```
+
+
 To create the training and test sets, instead of a stratified random sample or a simple random sample, a time-ordered sample was taken so that future observations did not leak into the training set given the time-series nature of influenza data. Next, the predictor set was created by removing all four predictors. The target variable, target_1wk was identified. Lastly, cross-validation folds were created where k=5 to reduce computation time.
-```{r, cache = TRUE}
+```{r, cache = TRUE, warning=FALSE}
 # Fit the Model
 # Ridge Regression
 dummies <- dummyVars(~ ., data = x_train)
@@ -1072,21 +1082,25 @@ rfTune <- train(x = x_train,
                 method = "rf",
                 trControl = ctrl,
                 importance = TRUE,
-                ntree = 100
+                ntree = 10
                 )
 
 # XGBoost
 set.seed(1)
-xgbTune <- train(x = x_train_num,
-                 y = y_train,
-                 method = "xgbTree"
-                 )
+
+xgbTune <- train(
+  x = x_train_num,
+  y = y_train,
+  method = "xgbTree",
+  trControl = ctrl
+)
+
 ```
-For linear model evaluation, Ridge Regression was used due to its ability to handle highly correlated predictors. Random Forest was also chosen for its ability to reduce overfitting and for its high predictive accuracy. 
+For linear model evaluation, Ridge Regression was used due to its ability to handle highly correlated predictors. Random Forest was also chosen for its ability to reduce overfitting and for its high predictive accuracy. Lastly, XGBoos was selected for 
 
 ```{r}
 # Model Evaluation
-train_metrics1 <- resamples(list(Ridge = ridgeTune, RForest = rfTune, XGB = xgbTune))
+train_metrics1 <- resamples(list(Ridge = ridgeTune, RF = rfTune, XGB = xgbTune))
 summary(train_metrics1)
 ```
 
@@ -1096,10 +1110,28 @@ importance1 <- varImp(ridgeTune)
 importance2 <- varImp(rfTune)
 importance3 <- varImp(xgbTune)
 
-importance1
-importance2
-importance3
+ridge_imp <- data.frame(
+  Variable = rownames(importance1$importance),
+  Ridge = importance1$importance$Overall
+)
 
+rf_imp <- data.frame(
+  Variable = rownames(importance2$importance),
+  RF = importance2$importance$Overall
+)
+
+xgb_imp <- data.frame(
+  Variable = rownames(importance3$importance),
+  XGB = importance3$importance$Overall
+)
+
+importance_table %>%
+  arrange(desc(XGB)) %>%
+  head(10) %>%
+  knitr::kable(
+    digits = 3,
+    caption = "Top 10 Variables by XGBoost Importance"
+  )
 ```
 
 
