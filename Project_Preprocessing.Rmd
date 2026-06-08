@@ -1036,11 +1036,11 @@ y_train <- train_data$target_1wk
 y_test  <- test_data$target_1wk
 
 # Create cross-validation folds 
-indx <- createFolds(y_train, returnTrain = TRUE) 
+indx <- createFolds(y_train, k=5, returnTrain = TRUE) 
 ctrl <- trainControl(method = "cv", index = indx)
 head(train_data)
 ```
-To create the training and test sets, instead of a stratified random sample or a simple random sample, a time-ordered sample was taken so that future observations did not leak into the training set given the time-series nature of influenza data. Next, the predictor set was created by removing all four predictors. The target variable, target_1wk was identified. Lastly, cross-validation folds were created.
+To create the training and test sets, instead of a stratified random sample or a simple random sample, a time-ordered sample was taken so that future observations did not leak into the training set given the time-series nature of influenza data. Next, the predictor set was created by removing all four predictors. The target variable, target_1wk was identified. Lastly, cross-validation folds were created where k=5 to reduce computation time.
 ```{r, cache = TRUE}
 # Fit the Model
 # Ridge Regression
@@ -1061,20 +1061,25 @@ ridgeTune <- train(x = x_train_num,
                    )
 
 # Random Forest
+# Specifying single value of mtry.
+rfGrid <- expand.grid(
+  mtry = floor(sqrt(ncol(x_train)))
+)
+
 set.seed(1)
 rfTune <- train(x = x_train,
                 y = y_train,
                 method = "rf",
                 trControl = ctrl,
                 importance = TRUE,
-                ntree = 300
+                ntree = 100
                 )
 
 # XGBoost
 set.seed(1)
 xgbTune <- train(x = x_train,
                  y = y_train,
-                 method = "xbgTree"
+                 method = "xgbTree"
                  )
 ```
 For linear model evaluation, Ridge Regression was used due to its ability to handle highly correlated predictors. Random Forest was also chosen for its ability to reduce overfitting and for its high predictive accuracy. 
