@@ -1077,7 +1077,7 @@ rfTune <- train(x = x_train,
 
 # XGBoost
 set.seed(1)
-xgbTune <- train(x = x_train,
+xgbTune <- train(x = x_train_num,
                  y = y_train,
                  method = "xgbTree"
                  )
