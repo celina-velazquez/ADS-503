@@ -27,6 +27,10 @@ library(dplyr) #data filtering, grouping,summarization
 library(usmap) #create U.S. state maps
 library(psych) #exploring data
 library(here)
+library(randomForest)
+library(caret)
+library(xgboost)
+#install.packages("xgboost")
 ```
 
 **The ILINet and Clinical Labs datasets were downloaded from the CDC FluView surveillance system, which provides weekly influenza monitoring data across the United States. The ILINet dataset contains information about influenza-like illness (ILI) activity reported by healthcare providers, including the percentage of flu-like patient visits, total ILI cases, number of providers, and total patient visits.**
@@ -1036,5 +1040,61 @@ indx <- createFolds(y_train, returnTrain = TRUE)
 ctrl <- trainControl(method = "cv", index = indx)
 head(train_data)
 ```
-To create the training and test sets, instead of a stratified random sample or a simple random sample, a time-ordered sample was taken so that future observations did not leak into the training set given the time-series nature of influenza data. Next, the predictor set was created by removing all four predictors. The target variable, target_1wk was identified. Lastly, 
+To create the training and test sets, instead of a stratified random sample or a simple random sample, a time-ordered sample was taken so that future observations did not leak into the training set given the time-series nature of influenza data. Next, the predictor set was created by removing all four predictors. The target variable, target_1wk was identified. Lastly, cross-validation folds were created.
+```{r, cache = TRUE}
+# Fit the Model
+# Ridge Regression
+dummies <- dummyVars(~ ., data = x_train)
+
+x_train_num <- predict(dummies, newdata = x_train)
+x_test_num  <- predict(dummies, newdata = x_test)
+
+set.seed(1)
+ridgeGrid <- expand.grid(lambda = seq(0, .1, length = 15))
+
+set.seed(1)
+ridgeTune <- train(x = x_train_num,
+                   y = y_train,
+                   method = "ridge",
+                   tuneGrid = ridgeGrid,
+                   trControl = ctrl
+                   )
+
+# Random Forest
+set.seed(1)
+rfTune <- train(x = x_train,
+                y = y_train,
+                method = "rf",
+                trControl = ctrl,
+                importance = TRUE,
+                ntree = 300
+                )
+
+# XGBoost
+set.seed(1)
+xgbTune <- train(x = x_train,
+                 y = y_train,
+                 method = "xbgTree"
+                 )
+```
+For linear model evaluation, Ridge Regression was used due to its ability to handle highly correlated predictors. Random Forest was also chosen for its ability to reduce overfitting and for its high predictive accuracy. 
+
+```{r}
+# Model Evaluation
+train_metrics1 <- resamples(list(Ridge = ridgeTune, RForest = rfTune, XGB = xgbTune))
+summary(train_metrics1)
+```
+
+```{r}
+# Determine variable importance
+importance1 <- varImp(ridgeTune)
+importance2 <- varImp(rfTune)
+importance3 <- varImp(xgbTune)
+
+importance1
+importance2
+importance3
+
+```
+
 
