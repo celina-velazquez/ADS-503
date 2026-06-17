@@ -1044,9 +1044,9 @@ ctrl <- trainControl(method = "cv", index = indx)
 #head(train_data)
 ```
 
-To create the training and test sets, instead of a stratified random sample or a simple random sample, a time-ordered sample was taken so that future observations did not leak into the training set given the time-series nature of influenza data. Next, the predictor set was created by removing all four predictors. The target variable, target_1wk was identified. Lastly, cross-validation folds were created where k=5 to reduce computation time.
+To create the training and test sets, instead of a stratified random sample or a simple random sample, a time-ordered sample was taken so that future observations did not leak into the training set given the time-series nature of influenza data. Next, the predictor set was created by removing all four response variables. The target variable, target_1wk was identified. Lastly, cross-validation folds were created where k=5 to reduce computation time.
 
-### Model Training
+### Model Training and Tuning
 
 ```{r, cache = TRUE, warning=FALSE, results='hide'}
 # Fit the Model
