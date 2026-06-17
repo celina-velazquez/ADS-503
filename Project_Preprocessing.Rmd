@@ -25,11 +25,14 @@ library(slider) # Used to help calculate rolling averages
 library(e1071) #to calculate skewness 
 library(dplyr) #data filtering, grouping,summarization
 library(usmap) #create U.S. state maps
+library(sf)#Spatial data processing
 library(psych) #exploring data
-library(here)
-library(randomForest)
-library(caret)
-library(xgboost)
+library(tidyr) # Data reshaping
+library(here) #for file paths
+library(randomForest) #for random forest modeling
+library(caret) #Model evaluation and training
+library(xgboost) #for xgboost modeling
+library(viridis) #Color palettes
 #install.packages("xgboost")
 ```
 
@@ -38,7 +41,6 @@ library(xgboost)
 **The Clinical Labs dataset contains laboratory-confirmed influenza testing results, including total specimens tested, confirmed Influenza A and B cases, and positivity percentages. Combining these two datasets helps create a more complete influenza surveillance system by connecting symptom-based flu activity with confirmed laboratory influenza cases for outbreak analysis and prediction.**
 
 ### IMPORT DATASETS
-
 ```{r}
 # CDC datasets contain an extra descriptive row,
 # therefore we use skip = 1  during import.
@@ -52,8 +54,8 @@ ilinet <- read_csv(here(
 clinical_labs <- read_csv(here(
   "ICL_NREVSS_Clinical_Labs.csv"),
   skip = 1,col_types = cols(.default = col_character()))
-
 ```
+
 
 ### VERIFY IMPORTS
 
@@ -232,7 +234,7 @@ numeric_ilinet_long <- numeric_ilinet %>%
 #Create histogram distributions for all numeric variables
 ggplot(numeric_ilinet_long,aes(x = Value)) +
   
-  geom_histogram(bins = 30,fill ="steelblue",color= "white",alpha = 0.9) +
+  geom_histogram(bins = 20,fill ="steelblue",color= "white",alpha = 0.9) +
   
   facet_wrap(~ Variable,scales = "free",ncol = 2) +   #creates separate plots for each variable
   
@@ -262,7 +264,7 @@ numeric_clinical_long <- numeric_clinical %>%
 
 #Create histogram distributions for all numeric variables
 ggplot(numeric_clinical_long,aes(x = Value)) +
-  geom_histogram(bins = 30,fill = "steelblue",color = "white",alpha = 0.9) +
+  geom_histogram(bins = 15,fill = "steelblue",color = "white",alpha = 0.9) +
   
   facet_wrap(~ Variable,scales = "free",ncol = 3) +   #creates separate plots for each variable
   
@@ -849,20 +851,31 @@ kable(
 
 **Which influenza strain contributes most to outbreaks?**
 
-```{r,fig.width=5, fig.height=3,fig.align='center'}
-#group data by year,find the week with highest positive 
-peak_weeks <- flu_model_data %>% group_by(year) %>% slice_max(percent_positive, n = 1) %>%
-  ungroup()
-peak_strains <- peak_weeks %>% summarise(    #calculate average influenza A & B in peak weeks
-Avg_Influenza_A = mean(total_a, na.rm = TRUE),Avg_Influenza_B = mean(total_b, na.rm = TRUE))
 
-peak_weeks %>% summarise(
-  Influenza_A = sum(total_a, na.rm = TRUE),Influenza_B = sum(total_b, na.rm = TRUE)) %>%
-  tidyr::pivot_longer(everything(),names_to = "Strain",values_to = "Cases") %>%
-  ggplot(aes(Strain,Cases,fill = Strain ) ) +
-  geom_col() + labs(
-  title = "Influenza Strains During Annual Outbreak Peaks",x = "Strain",
-    y = "Total Cases") + theme_minimal()
+```{r,fig.width=9, fig.height=4,fig.align='center'}
+
+ab_weekly <- flu_model_data %>% group_by(week) %>%
+  summarise(Influenza_A = mean(total_a, na.rm = TRUE),
+    Influenza_B = mean(total_b, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(Influenza_A, Influenza_B),
+    names_to = "strain",values_to = "cases")
+
+# Labels placed near the peaks
+line_labels <- data.frame(
+  week = c(7, 7),cases = c(235, 70),label = c("Influenza A", "Influenza B"))
+
+ggplot(ab_weekly,
+  aes(x = week,y = cases,color = strain,fill = strain )) +
+  geom_area(alpha = 0.15,position = "identity") +geom_line(linewidth = 1.2 ) +
+  geom_text(data = line_labels,aes(x = week, y = cases, label = label),
+    inherit.aes = FALSE,fontface = "bold",size = 4) +
+  scale_x_continuous(breaks = 1:53,limits = c(1, 53)) +
+  labs(title = "Weekly Influenza A and B Activity Patterns",
+    x = "Week",y = "Average Weekly Cases",color = "Strain",fill = "Strain") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 90,size = 7,vjust = 0.5,hjust = 1))
+
 ```
 
 -   The chart compares Influenza A and Influenza B activity during the peak outbreak week of each year.
@@ -872,22 +885,40 @@ peak_weeks %>% summarise(
 
 **Which regions have experienced the highest influenza activity during the past years and may require additional healthcare preparedness?**
 
-```{r}
-# Group records by state for all years and calculates the average value of percent_positive
-#and count observations in each state and rename region as states
-map_data <- flu_model_data %>%group_by(region) %>% summarise(
-    avg_positive = mean(percent_positive, na.rm = TRUE),observations = n()) %>% 
-  rename(state = region)
+```{r,warning=FALSE}
+# Average influenza positivity by state
+map_data <- flu_model_data %>% group_by(region) %>%
+  summarise(avg_positive = mean(percent_positive, na.rm = TRUE),
+    .groups = "drop") %>% rename(full = region)
 
-# Create choropleth map
-plot_usmap(data = map_data,
-  values = "avg_positive") +scale_fill_viridis_c(option = "plasma",
-  name = "Average\nPositivity (%)") +labs(
-    title = "Average Influenza Positivity by State",subtitle = "For All Available Years",
-    caption = "Higher values indicate greater influenza activity" ) + 
-    theme(legend.position = "right") +
-    theme(legend.position = "right",plot.title = element_text(hjust = 0.5),
-    plot.subtitle = element_text(hjust = 0.5) )
+# US state map
+states_sf <- usmap::us_map(regions = "states") %>% st_as_sf()
+
+# Join influenza data
+label_data <- states_sf %>% left_join(map_data, by = "full")
+
+# Create state centroids for labels
+centroids <- st_centroid(label_data)
+coords <- st_coordinates(centroids)
+
+label_data$x <- coords[,1]
+label_data$y <- coords[,2]
+
+# Map
+ggplot(label_data) + geom_sf(aes(fill = avg_positive),color = "white",linewidth = 0.3) +
+
+  geom_text(aes(x = x,y = y,
+      label = round(avg_positive, 1)),color = "black",size = 2.5,fontface = "bold") +
+
+  scale_fill_distiller(palette = "violet",direction = 1,name = "Average\nPositivity (%)" ) +
+
+  labs(title = "Average Influenza Positivity by State",
+    subtitle = "For All Available Years",
+    caption = "Higher values indicate greater influenza activity") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    plot.subtitle = element_text(hjust = 0.5, size = 11),
+    legend.position = "right",plot.caption = element_text(hjust = 0.5))
 
 # Display Top 10 states with highest influenza positivity
 top_states <- map_data %>% arrange(desc(avg_positive)) %>% slice_head(n = 10)
@@ -933,6 +964,7 @@ flu_model_data <- flu_model_data %>%
 **Does current influenza activity help predict next week's activity?**
 
 ```{r,fig.align='center',fig.width=6, fig.height=4}
+
 # Create influenza activity categories based on percent positive
 flu_persistence <- flu_model_data %>%
   arrange(region, year, week) %>%      # Keep data in time order
@@ -953,11 +985,16 @@ heat_data$current_level <- factor(heat_data$current_level,levels = c("Low","Medi
 heat_data$next_level <- factor(heat_data$next_level,levels = c("Low","Medium","High"))
 
 # Create heatmap
-ggplot(
-  heat_data,aes( x = current_level,y = next_level,fill = n )) + geom_tile(color = "white") +
-  
-  # Display counts inside each box
-  geom_text(aes(label = scales::comma(n)),size = 4) + 
+heat_data$diag <- heat_data$current_level == heat_data$next_level
+
+ggplot(heat_data, aes(x = current_level, y = next_level)) +
+
+  # Base heatmap
+  geom_tile(aes(fill = n), color = "white") +
+
+  # Darken diagonal cells
+  geom_tile(data = subset(heat_data, diag),fill = "darkblue",alpha = 0.4,color = "white") +
+  geom_text(aes(label = scales::comma(n)), size = 4) +
   scale_fill_gradient(low = "#D6EAF8",high = "#5DADE2",name = "Count") +
   labs(title = "Relationship between current and future influenza activity levels",
     x = "Current Week Activity", y = "Next Week Activity") +
@@ -976,7 +1013,7 @@ ggplot(
 
 **How does influenza positivity vary throughout the year?**
 
-```{r,fig.width=7, fig.height=5}
+```{r,fig.width=9, fig.height=6}
 # Each box shows the distribution of influenza positivity
 # across all years for that specific week
 ggplot(flu_model_data,
