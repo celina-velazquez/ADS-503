@@ -1117,6 +1117,9 @@ rfGrid <- expand.grid(
   mtry = floor(sqrt(ncol(x_train)))
 )
 
+# Specifying multiple values of numbers of trees to create
+ntree_values <- c(100, 250, 500, 1000)
+
 set.seed(1)
 rfTune <- train(x = x_train,
                 y = y_train,
@@ -1124,7 +1127,7 @@ rfTune <- train(x = x_train,
                 tuneGrid = rfGrid,
                 trControl = ctrl,
                 importance = TRUE,
-                ntree = 10
+                ntree = nt
                 )
 
 # XGBoost
@@ -1225,4 +1228,4 @@ postResample(pred = testResults$xgbPred, obs = testResults$obs)
 diff(train_metrics, metric = "RMSE") |> summary()
 ```
 
-A check for statistically significant differences in the RMSE values of each of the models reveals that there is a significant difference in RMSE between XGB and Ridge (p-value = 0.00037) and between XGB and RF (p-value = 0.01060). There was no significant difference in the prediction error between Ridge and RF (p-value = 1.00000). XGB achieved the lowest RMSE and highest R-squared with a value of 0.922, and, as a result, was selected as the preferred model for prediction.
+A check for statistically significant differences in the RMSE values of each of the models reveals that there is a significant difference in RMSE between XGB and Ridge (p-value = 0.017) and between XGB and RF (p-value = 0.023). There was also a significant difference in the prediction error between Ridge and RF (p-value = 0.034). XGB achieved the lowest RMSE (2.384) and highest R-squared with a value of 0.925, and, as a result, was selected as the preferred model for prediction.
