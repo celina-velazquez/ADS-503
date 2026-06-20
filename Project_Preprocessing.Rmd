@@ -1174,8 +1174,7 @@ importance3 <- varImp(xgbTune)
 
 ridge_imp <- data.frame(
   Variable = rownames(importance1$importance),
-  Ridge = importance1$importance$Overall
-)
+  Ridge = importance1$importance$Overall)
 
 rf_imp <- data.frame(
   Variable = rownames(importance2$importance),
@@ -1186,6 +1185,10 @@ xgb_imp <- data.frame(
   Variable = rownames(importance3$importance),
   XGB = importance3$importance$Overall
 )
+
+importance_table <- ridge_imp %>%
+  full_join(rf_imp, by = "Variable") %>%
+  full_join(xgb_imp, by = "Variable")
 
 importance_table %>%
   arrange(desc(XGB)) %>%
